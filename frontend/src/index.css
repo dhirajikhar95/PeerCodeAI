@@ -1,0 +1,313 @@
+@import "tailwindcss";
+
+@plugin "daisyui";
+
+/* Custom PeerCode AI Dark Theme - midnight indigo with vibrant accents */
+@plugin "daisyui/theme" {
+  name: "peercode-dark";
+  default: true;
+  color-scheme: dark;
+
+  /* Base colors - higher contrast indigo tones for card visibility */
+  --color-base-100: oklch(28% 0.065 275);
+  --color-base-200: oklch(22% 0.055 275);
+  --color-base-300: oklch(16% 0.045 275);
+  --color-base-content: oklch(94% 0.01 260);
+
+  /* Primary - Vibrant Coral/Red */
+  --color-primary: oklch(65% 0.22 25);
+  --color-primary-content: oklch(98% 0.01 25);
+
+  /* Secondary - Electric Cyan */
+  --color-secondary: oklch(72% 0.16 185);
+  --color-secondary-content: oklch(98% 0.01 185);
+
+  /* Accent - Golden Yellow */
+  --color-accent: oklch(85% 0.18 85);
+  --color-accent-content: oklch(25% 0.05 85);
+
+  /* Neutral */
+  --color-neutral: oklch(32% 0.04 275);
+  --color-neutral-content: oklch(90% 0.01 260);
+
+  /* Semantic colors */
+  --color-info: oklch(70% 0.15 220);
+  --color-info-content: oklch(20% 0.02 220);
+  --color-success: oklch(70% 0.18 155);
+  --color-success-content: oklch(98% 0.01 155);
+  --color-warning: oklch(80% 0.18 85);
+  --color-warning-content: oklch(20% 0.05 85);
+  --color-error: oklch(65% 0.22 25);
+  --color-error-content: oklch(98% 0.01 25);
+
+  /* Border radius */
+  --radius-selector: 1rem;
+  --radius-field: 0.5rem;
+  --radius-box: 1rem;
+
+  /* Effects */
+  --depth: 1;
+  --noise: 0;
+}
+
+/* Custom PeerCode AI Light Theme - clean and professional */
+@plugin "daisyui/theme" {
+  name: "peercode-light";
+  color-scheme: light;
+
+  /* Base colors - warm off-white with subtle lavender undertones */
+  --color-base-100: oklch(99% 0.008 280);
+  --color-base-200: oklch(96% 0.012 280);
+  --color-base-300: oklch(93% 0.018 280);
+  --color-base-content: oklch(20% 0.02 260);
+
+  /* Primary - Deep Coral (darker for light bg contrast) */
+  --color-primary: oklch(55% 0.22 25);
+  --color-primary-content: oklch(98% 0.01 25);
+
+  /* Secondary - Teal */
+  --color-secondary: oklch(50% 0.14 185);
+  --color-secondary-content: oklch(98% 0.01 185);
+
+  /* Accent - Warm Amber */
+  --color-accent: oklch(70% 0.18 85);
+  --color-accent-content: oklch(20% 0.05 85);
+
+  /* Neutral */
+  --color-neutral: oklch(45% 0.03 260);
+  --color-neutral-content: oklch(98% 0.01 260);
+
+  /* Semantic colors */
+  --color-info: oklch(55% 0.15 220);
+  --color-info-content: oklch(98% 0.01 220);
+  --color-success: oklch(55% 0.18 155);
+  --color-success-content: oklch(98% 0.01 155);
+  --color-warning: oklch(70% 0.18 85);
+  --color-warning-content: oklch(20% 0.05 85);
+  --color-error: oklch(55% 0.22 25);
+  --color-error-content: oklch(98% 0.01 25);
+
+  /* Border radius */
+  --radius-selector: 1rem;
+  --radius-field: 0.5rem;
+  --radius-box: 1rem;
+
+  /* Effects */
+  --depth: 1;
+  --noise: 0;
+}
+
+/* Theme-aware gradient backgrounds */
+:root {
+  --navbar-gradient: linear-gradient(to right, #1f2937, #374151, #1f2937);
+  --footer-gradient: linear-gradient(to right, #1f2937, #374151, #1f2937);
+  --page-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+}
+
+[data-theme="peercode-dark"] {
+  --navbar-gradient: linear-gradient(to right, #312e81, #4338ca, #312e81);
+  --footer-gradient: linear-gradient(to right, #312e81, #4338ca, #312e81);
+  --page-gradient: linear-gradient(145deg, #0f172a 0%, #1e293b 35%, #1e3a5f 50%, #1e293b 65%, #0f172a 100%);
+}
+
+[data-theme="peercode-light"] {
+  --navbar-gradient: linear-gradient(to right, #4338ca, #6366f1, #4338ca);
+  --footer-gradient: linear-gradient(to right, #4338ca, #6366f1, #4338ca);
+  --page-gradient: linear-gradient(145deg, #fefefe 0%, #f5f0ff 20%, #fdf4ff 40%, #fff0f5 60%, #f0f9ff 80%, #fefefe 100%);
+}
+
+/* Add cursor pointer to buttons by default */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/* Optimized hero float animation using CSS instead of JS for better performance */
+@keyframes hero-float {
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+.hero-float {
+  animation: hero-float 6s ease-in-out infinite;
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  .hero-float {
+    animation: none;
+  }
+}
+
+/* Manual animations removed in favor of Framer Motion */
+
+/* STREAM SDK THEME OVERRIDES */
+:root {
+  /* Video Call Theme Mapping */
+  --str-video__background-color: var(--color-base-100);
+  --str-video__text-color: var(--color-base-content);
+  --str-video__secondary-background-color: var(--color-base-200);
+  --str-video__menu-background-color: var(--color-base-200);
+  --str-video__menu-text-color: var(--color-base-content);
+  --str-video__button-background: var(--color-base-200);
+  --str-video__button-text: var(--color-base-content);
+
+  /* Chat Theme Mapping */
+  --str-chat__background-color: var(--color-base-100);
+  --str-chat__primary-surface-color: var(--color-base-200);
+  --str-chat__primary-surface-color-low-emphasis: var(--color-base-300);
+  --str-chat__message-textarea-background-color: var(--color-base-200);
+  --str-chat__text-color: var(--color-base-content);
+}
+
+/* Specific fix for participant menu and popups - Dark BG + White Text always */
+.str-video__menu-container {
+  background-color: #1a1a1a !important;
+  color: #ffffff !important;
+  border: 1px solid #333 !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5) !important;
+}
+
+.str-video__participant-action-menu {
+  background-color: #1a1a1a !important;
+  color: #ffffff !important;
+}
+
+/* Ensure icons/buttons inside the menu are also white */
+.str-video__menu-container svg,
+.str-video__menu-container button {
+  color: #ffffff !important;
+}
+
+/* Fix participant name visibility - always white text on video overlay */
+.str-video__participant-details,
+.str-video__participant-details__name,
+.str-video__participant-name,
+.str-video__speaker-layout__participant-name,
+.str-video__paginated-grid-layout__participant-name {
+  color: #ffffff !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8) !important;
+}
+
+/* Stream Chat - Hide file attachment button */
+.str-chat__attachment-picker-button,
+.str-chat__file-input-container,
+button[aria-label="Open attachment picker"] {
+  display: none !important;
+}
+
+/* Stream Chat Theme-Aware Styling */
+/* Dark theme chat */
+[data-theme="peercode-dark"] .str-chat,
+[data-theme="peercode-dark"] .str-chat__channel,
+[data-theme="peercode-dark"] .str-chat__main-panel {
+  background-color: #1e1e2e !important;
+  color: #e4e4e7 !important;
+}
+
+[data-theme="peercode-dark"] .str-chat__list {
+  background-color: #1e1e2e !important;
+}
+
+[data-theme="peercode-dark"] .str-chat__message-input,
+[data-theme="peercode-dark"] .str-chat__message-input-inner {
+  background-color: #2a2a3e !important;
+  border-color: #3f3f50 !important;
+}
+
+[data-theme="peercode-dark"] .str-chat__textarea textarea {
+  background-color: transparent !important;
+  color: #e4e4e7 !important;
+}
+
+[data-theme="peercode-dark"] .str-chat__message-bubble,
+[data-theme="peercode-dark"] .str-chat__message-text-inner {
+  background-color: #2a2a3e !important;
+  color: #e4e4e7 !important;
+}
+
+[data-theme="peercode-dark"] .str-chat__message--me .str-chat__message-bubble,
+[data-theme="peercode-dark"] .str-chat__message--me .str-chat__message-text-inner {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+[data-theme="peercode-dark"] .str-chat__date-separator-line {
+  background-color: #3f3f50 !important;
+}
+
+[data-theme="peercode-dark"] .str-chat__date-separator-date {
+  color: #a1a1aa !important;
+}
+
+/* Dark theme - Empty state fix */
+[data-theme="peercode-dark"] .str-chat__empty-channel,
+[data-theme="peercode-dark"] .str-chat__channel-empty-indicator,
+[data-theme="peercode-dark"] .str-chat__virtual-list,
+[data-theme="peercode-dark"] .str-chat__message-list-scroll,
+[data-theme="peercode-dark"] .str-chat__container {
+  background-color: #1e1e2e !important;
+  color: #a1a1aa !important;
+}
+
+[data-theme="peercode-dark"] .str-chat__empty-channel svg,
+[data-theme="peercode-dark"] .str-chat__channel-empty-indicator svg {
+  color: #4a4a5e !important;
+  fill: #4a4a5e !important;
+}
+
+/* Light theme chat */
+[data-theme="peercode-light"] .str-chat,
+[data-theme="peercode-light"] .str-chat__channel,
+[data-theme="peercode-light"] .str-chat__main-panel {
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+}
+
+[data-theme="peercode-light"] .str-chat__list {
+  background-color: #ffffff !important;
+}
+
+[data-theme="peercode-light"] .str-chat__message-input,
+[data-theme="peercode-light"] .str-chat__message-input-inner {
+  background-color: #f3f4f6 !important;
+  border-color: #e5e7eb !important;
+}
+
+[data-theme="peercode-light"] .str-chat__textarea textarea {
+  background-color: transparent !important;
+  color: #1f2937 !important;
+}
+
+[data-theme="peercode-light"] .str-chat__message-bubble,
+[data-theme="peercode-light"] .str-chat__message-text-inner {
+  background-color: #f3f4f6 !important;
+  color: #1f2937 !important;
+}
+
+[data-theme="peercode-light"] .str-chat__message--me .str-chat__message-bubble,
+[data-theme="peercode-light"] .str-chat__message--me .str-chat__message-text-inner {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+[data-theme="peercode-light"] .str-chat__date-separator-line {
+  background-color: #e5e7eb !important;
+}
+
+[data-theme="peercode-light"] .str-chat__date-separator-date {
+  color: #6b7280 !important;
+}

@@ -37,10 +37,29 @@ export const protectRoute = async (req, res, next) => {
       }
 
       // Find user in DB by clerk ID
-      const user = await User.findOne({ clerkId });
+      let user = await User.findOne({ clerkId });
 
       if (!user) {
-        return res.status(404).json({ message: "User not found" });
+        // Auto-create user from JWT claims if Inngest hasn't processed the webhook yet.
+        // This eliminates the race condition where frontend requests arrive before
+        // Inngest creates the user, causing delayed role selection page loading.
+        try {
+          user = await User.create({
+            clerkId,
+            email: claims.email || "",
+            name: `${claims.first_name || claims.given_name || ""} ${claims.last_name || claims.family_name || ""}`.trim() || "User",
+            profileImage: claims.image_url || claims.picture || "",
+            role: null,
+          });
+        } catch (createError) {
+          // If creation fails due to duplicate key (race with Inngest), try finding again
+          if (createError.code === 11000) {
+            user = await User.findOne({ clerkId });
+          }
+          if (!user) {
+            return res.status(404).json({ message: "User not found" });
+          }
+        }
       }
 
       req.user = user;

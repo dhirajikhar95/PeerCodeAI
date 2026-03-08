@@ -348,11 +348,15 @@ export async function endSession(req, res) {
         session.teacherCodeSnapshot = contributions.finalCode || "";
       } else if (contributions.teacherCharCount > 0) {
         session.feedbackType = "teacher_assisted";
+        // ALWAYS use the student-only code tracked by socket, never the shared editor state
         session.studentCodeSnapshot = contributions.studentOnlyCode || "";
         session.teacherCodeSnapshot = contributions.finalCode || "";
       } else {
         session.feedbackType = "student_only";
-        session.studentCodeSnapshot = contributions.finalCode || "";
+        // ALWAYS use studentOnlyCode — this is the last code written by the student,
+        // NOT finalCode which could contain teacher edits even when teacherCharCount is 0
+        // (e.g., if teacher types and then deletes, delta could cancel out)
+        session.studentCodeSnapshot = contributions.studentOnlyCode || contributions.finalCode || "";
         session.teacherCodeSnapshot = "";
       }
 

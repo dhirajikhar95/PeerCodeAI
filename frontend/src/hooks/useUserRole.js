@@ -9,6 +9,6 @@ export const useUserRole = () => {
         queryKey: ["currentUser"],
         queryFn: userApi.getCurrentUser,
         enabled: !!isSignedIn,
-        retry: false,
+        retry: 2,
     });
 };

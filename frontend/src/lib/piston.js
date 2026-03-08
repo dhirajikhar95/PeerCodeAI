@@ -9,6 +9,36 @@ const LANGUAGE_VERSIONS = {
   cpp: { language: "c++", version: "10.2.0" },
 };
 
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1000;
+
+/**
+ * Fetch with retry logic for transient HTTP errors (401, 429, 5xx)
+ */
+async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      if (response.ok) return response;
+
+      // Retry on transient errors
+      if ((response.status === 401 || response.status === 429 || response.status >= 500) && attempt < retries) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS * Math.pow(2, attempt)));
+        continue;
+      }
+
+      // Non-retryable error or retries exhausted
+      return response;
+    } catch (networkError) {
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS * Math.pow(2, attempt)));
+        continue;
+      }
+      throw networkError;
+    }
+  }
+}
+
 /**
  * @param {string} language - programming language
  * @param {string} code - source code to executed
@@ -25,7 +55,7 @@ export async function executeCode(language, code) {
       };
     }
 
-    const response = await fetch(`${PISTON_API}/execute`, {
+    const response = await fetchWithRetry(`${PISTON_API}/execute`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -45,7 +75,7 @@ export async function executeCode(language, code) {
     if (!response.ok) {
       return {
         success: false,
-        error: `HTTP error! status: ${response.status}`,
+        error: `Code execution service is temporarily unavailable (status: ${response.status}). Please try again.`,
       };
     }
 
@@ -69,7 +99,7 @@ export async function executeCode(language, code) {
   } catch (error) {
     return {
       success: false,
-      error: `Failed to execute code: ${error.message}`,
+      error: `Failed to execute code. Please check your connection and try again.`,
     };
   }
 }
@@ -136,7 +166,7 @@ export async function runSingleTestCase(language, code, input, expectedOutput) {
       };
     }
 
-    const response = await fetch(`${PISTON_API}/execute`, {
+    const response = await fetchWithRetry(`${PISTON_API}/execute`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -160,7 +190,7 @@ export async function runSingleTestCase(language, code, input, expectedOutput) {
         expected: expectedOutput,
         actual: "",
         passed: false,
-        error: `HTTP error: ${response.status}`,
+        error: `Code execution service temporarily unavailable (status: ${response.status}). Please try again.`,
       };
     }
 
@@ -193,7 +223,7 @@ export async function runSingleTestCase(language, code, input, expectedOutput) {
       expected: expectedOutput,
       actual: "",
       passed: false,
-      error: `Execution failed: ${error.message}`,
+      error: `Test execution failed. Please check your connection and try again.`,
     };
   }
 }

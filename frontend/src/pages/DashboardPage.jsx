@@ -24,6 +24,46 @@ function DashboardPage() {
   const { data: recentSessionsData, isLoading: loadingRecentSessions } = useMyRecentSessions();
   const recentSessions = recentSessionsData?.sessions || [];
 
+  // Compute dynamic stats from real session data
+  const computeStreak = () => {
+    if (recentSessions.length === 0) return 0;
+    const sessionDates = recentSessions
+      .map(s => new Date(s.createdAt || s.updatedAt).toDateString())
+      .filter((v, i, a) => a.indexOf(v) === i) // unique dates
+      .map(d => new Date(d))
+      .sort((a, b) => b - a); // newest first
+
+    let streak = 1;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const firstDate = new Date(sessionDates[0]);
+    firstDate.setHours(0, 0, 0, 0);
+
+    // If the most recent session isn't today or yesterday, streak is 0
+    const diffFromToday = Math.floor((today - firstDate) / (1000 * 60 * 60 * 24));
+    if (diffFromToday > 1) return 0;
+
+    for (let i = 1; i < sessionDates.length; i++) {
+      const curr = new Date(sessionDates[i - 1]);
+      const prev = new Date(sessionDates[i]);
+      curr.setHours(0, 0, 0, 0);
+      prev.setHours(0, 0, 0, 0);
+      const diff = Math.floor((curr - prev) / (1000 * 60 * 60 * 24));
+      if (diff === 1) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  };
+
+  const problemsSolved = new Set(
+    recentSessions.filter(s => s.questionId).map(s => s.questionId)
+  ).size;
+
+  const streakDays = computeStreak();
+
   const stats = [
     {
       label: "Sessions Completed",
@@ -33,13 +73,13 @@ function DashboardPage() {
     },
     {
       label: "Active Streak",
-      value: "3 days",
+      value: `${streakDays} ${streakDays === 1 ? "day" : "days"}`,
       icon: ZapIcon,
       gradient: "from-secondary to-accent",
     },
     {
       label: "Problems Solved",
-      value: recentSessions.length * 2,
+      value: problemsSolved,
       icon: TrendingUpIcon,
       gradient: "from-accent to-primary",
     },

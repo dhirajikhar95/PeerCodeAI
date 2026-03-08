@@ -29,7 +29,7 @@ const LANGUAGE_CONFIG = {
   javascript: { name: "JavaScript", monacoLang: "javascript", logo: "/javascript.png" },
   python: { name: "Python", monacoLang: "python", logo: "/python.png" },
   java: { name: "Java", monacoLang: "java", logo: "/java.png" },
-  cpp: { name: "C++", monacoLang: "cpp", logo: "/java.png" },
+  cpp: { name: "C++", monacoLang: "cpp", logo: "/cpp.png" },
 };
 
 function SessionPage() {

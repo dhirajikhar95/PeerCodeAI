@@ -8,7 +8,7 @@ import {
   ScreenShareButton,
 } from "@stream-io/video-react-sdk";
 import { Loader2Icon, MessageSquareIcon, UsersIcon, XIcon } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router";
 import { Channel, Chat, MessageInput, MessageList, Thread, Window } from "stream-chat-react";
 import { useEndSession } from "../hooks/useSessions";
@@ -26,6 +26,7 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
   const { isMute } = useMicrophoneState();
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const hasExplicitlyLeftRef = useRef(false);
 
   // Transcription - enabled when mic is on, uses main session socket via onTranscript callback
   // isActive: true when mic is on (for badge visibility)
@@ -40,8 +41,10 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
   const endSessionMutation = useEndSession();
 
   // Watch for call ending
+  // Only navigate when the user has explicitly left/ended the session.
+  // Transient CallingState.LEFT events (e.g., network hiccups, chat ops) are ignored.
   useEffect(() => {
-    if (callingState === CallingState.LEFT) {
+    if (callingState === CallingState.LEFT && hasExplicitlyLeftRef.current) {
       if (sessionType !== "class") {
         navigate(`/feedback/${id}`);
       } else {
@@ -80,6 +83,7 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
   };
 
   const handleLeave = () => {
+    hasExplicitlyLeftRef.current = true;
     if (isHost) {
       if (confirm("End this session for everyone?")) {
         endSessionMutation.mutate(id, {
@@ -91,6 +95,8 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
             }
           },
         });
+      } else {
+        hasExplicitlyLeftRef.current = false;
       }
     } else {
       navigate("/dashboard");

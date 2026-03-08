@@ -1,162 +1,134 @@
-// Piston API is a service for code execution
+// Wandbox API for code execution (free, no auth required)
+// Replaced Piston (emkc.org) which shut down Feb 2026
+// API docs: https://github.com/melpon/wandbox/blob/master/kennel2/API.md
 
-const PISTON_API = "https://emkc.org/api/v2/piston";
+const WANDBOX_API = "https://wandbox.org/api/compile.json";
 
-const LANGUAGE_VERSIONS = {
-  javascript: { language: "javascript", version: "18.15.0" },
-  python: { language: "python", version: "3.10.0" },
-  java: { language: "java", version: "15.0.2" },
-  cpp: { language: "c++", version: "10.2.0" },
+// Wandbox compiler names for each language
+const COMPILER_MAP = {
+  javascript: { compiler: "nodejs-20.17.0", name: "JavaScript" },
+  python: { compiler: "cpython-3.14.0", name: "Python" },
+  java: { compiler: "openjdk-jdk-22+36", name: "Java" },
+  cpp: { compiler: "gcc-13.2.0", name: "C++" },
 };
 
 const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 1000;
+const RETRY_DELAY_MS = 1500;
 
 /**
- * Fetch with retry logic for transient HTTP errors (401, 429, 5xx)
+ * Execute code via Wandbox API with retry
  */
-async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
+async function wandboxExecute(code, compiler, stdin = "") {
+  const body = {
+    code,
+    compiler,
+    ...(stdin ? { stdin } : {}),
+  };
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch(url, options);
-      if (response.ok) return response;
+      const response = await fetch(WANDBOX_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-      // Retry on transient errors
-      if ((response.status === 401 || response.status === 429 || response.status >= 500) && attempt < retries) {
+      if (response.ok) {
+        return await response.json();
+      }
+
+      // Retry on server errors or rate limits
+      if ((response.status >= 500 || response.status === 429) && attempt < MAX_RETRIES) {
         await new Promise(r => setTimeout(r, RETRY_DELAY_MS * Math.pow(2, attempt)));
         continue;
       }
 
-      // Non-retryable error or retries exhausted
-      return response;
-    } catch (networkError) {
-      if (attempt < retries) {
+      throw new Error(`Code execution service error (status: ${response.status}). Please try again.`);
+    } catch (error) {
+      if (attempt < MAX_RETRIES && !error.message.includes("status:")) {
         await new Promise(r => setTimeout(r, RETRY_DELAY_MS * Math.pow(2, attempt)));
         continue;
       }
-      throw networkError;
+      throw error;
     }
   }
 }
 
 /**
  * @param {string} language - programming language
- * @param {string} code - source code to executed
+ * @param {string} code - source code to execute
  * @returns {Promise<{success:boolean, output?:string, error?: string}>}
  */
 export async function executeCode(language, code) {
   try {
-    const languageConfig = LANGUAGE_VERSIONS[language];
+    const langConfig = COMPILER_MAP[language];
 
-    if (!languageConfig) {
+    if (!langConfig) {
       return {
         success: false,
         error: `Unsupported language: ${language}`,
       };
     }
 
-    const response = await fetchWithRetry(`${PISTON_API}/execute`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        language: languageConfig.language,
-        version: languageConfig.version,
-        files: [
-          {
-            name: `main.${getFileExtension(language)}`,
-            content: code,
-          },
-        ],
-      }),
-    });
+    const result = await wandboxExecute(code, langConfig.compiler);
 
-    if (!response.ok) {
+    const stdout = result.program_output || "";
+    const stderr = result.program_error || "";
+    const compilerError = result.compiler_error || "";
+    const status = result.status;
+
+    // Compilation error
+    if (compilerError && status !== "0") {
       return {
         success: false,
-        error: `Code execution service is temporarily unavailable (status: ${response.status}). Please try again.`,
+        output: "",
+        error: compilerError,
       };
     }
 
-    const data = await response.json();
-
-    const output = data.run.output || "";
-    const stderr = data.run.stderr || "";
-
-    if (stderr) {
+    // Runtime error (non-zero exit status)
+    if (status !== "0" && status !== 0) {
       return {
         success: false,
-        output: output,
+        output: stdout,
+        error: stderr || result.signal || "Runtime error",
+      };
+    }
+
+    // Has stderr but still ran (warnings etc.)
+    if (stderr && !stdout) {
+      return {
+        success: false,
+        output: stdout,
         error: stderr,
       };
     }
 
     return {
       success: true,
-      output: output || "No output",
+      output: stdout || "No output",
     };
   } catch (error) {
     return {
       success: false,
-      error: `Failed to execute code. Please check your connection and try again.`,
+      error: error.message || "Failed to execute code. Please try again.",
     };
-  }
-}
-
-/**
- * Wrap user code to read from stdin and call their solution
- * Supports different patterns per language
- */
-function wrapCodeWithInput(language, code, input) {
-  // For LeetCode-style problems, we need to adapt the code to read input
-  // This is a simplified approach - the actual implementation depends on code structure
-
-  switch (language) {
-    case "javascript":
-      return `
-const input = \`${input}\`;
-const lines = input.trim().split('\\n');
-let lineIndex = 0;
-const readline = () => lines[lineIndex++] || '';
-
-${code}
-`;
-
-    case "python":
-      return `
-import sys
-from io import StringIO
-sys.stdin = StringIO("""${input}""")
-
-${code}
-`;
-
-    case "java":
-      // Java needs the input passed via stdin
-      return code;
-
-    case "cpp":
-      return code;
-
-    default:
-      return code;
   }
 }
 
 /**
  * Run a single test case
- * @param {string} language 
- * @param {string} code 
- * @param {string} input 
- * @param {string} expectedOutput 
+ * @param {string} language
+ * @param {string} code
+ * @param {string} input
+ * @param {string} expectedOutput
  * @returns {Promise<{input: string, expected: string, actual: string, passed: boolean, error?: string}>}
  */
 export async function runSingleTestCase(language, code, input, expectedOutput) {
   try {
-    const languageConfig = LANGUAGE_VERSIONS[language];
+    const langConfig = COMPILER_MAP[language];
 
-    if (!languageConfig) {
+    if (!langConfig) {
       return {
         input,
         expected: expectedOutput,
@@ -166,40 +138,28 @@ export async function runSingleTestCase(language, code, input, expectedOutput) {
       };
     }
 
-    const response = await fetchWithRetry(`${PISTON_API}/execute`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        language: languageConfig.language,
-        version: languageConfig.version,
-        files: [
-          {
-            name: `main.${getFileExtension(language)}`,
-            content: code,
-          },
-        ],
-        stdin: input,
-      }),
-    });
+    const result = await wandboxExecute(code, langConfig.compiler, input);
 
-    if (!response.ok) {
+    const stdout = result.program_output || "";
+    const stderr = result.program_error || "";
+    const compilerError = result.compiler_error || "";
+    const status = result.status;
+    const actualOutput = stdout.trim();
+    const expected = expectedOutput.trim();
+
+    // Compilation error
+    if (compilerError && status !== "0") {
       return {
         input,
-        expected: expectedOutput,
-        actual: "",
+        expected,
+        actual: compilerError,
         passed: false,
-        error: `Code execution service temporarily unavailable (status: ${response.status}). Please try again.`,
+        error: compilerError,
       };
     }
 
-    const data = await response.json();
-    const actualOutput = (data.run.output || "").trim();
-    const stderr = data.run.stderr || "";
-    const expected = expectedOutput.trim();
-
-    if (stderr) {
+    // Runtime error
+    if (stderr && status !== "0" && status !== 0) {
       return {
         input,
         expected,
@@ -223,16 +183,16 @@ export async function runSingleTestCase(language, code, input, expectedOutput) {
       expected: expectedOutput,
       actual: "",
       passed: false,
-      error: `Test execution failed. Please check your connection and try again.`,
+      error: error.message || "Test execution failed. Please try again.",
     };
   }
 }
 
 /**
  * Run all test cases for a piece of code
- * @param {string} language 
- * @param {string} code 
- * @param {Array<{input: string, output: string}>} testCases 
+ * @param {string} language
+ * @param {string} code
+ * @param {Array<{input: string, output: string}>} testCases
  * @returns {Promise<{results: Array, summary: {total: number, passed: number, failed: number}}>}
  */
 export async function runAllTestCases(language, code, testCases) {
@@ -255,15 +215,4 @@ export async function runAllTestCases(language, code, testCases) {
   };
 
   return { results, summary };
-}
-
-function getFileExtension(language) {
-  const extensions = {
-    javascript: "js",
-    python: "py",
-    java: "java",
-    cpp: "cpp",
-  };
-
-  return extensions[language] || "txt";
 }

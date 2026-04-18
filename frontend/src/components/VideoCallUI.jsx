@@ -1,6 +1,7 @@
 import {
   CallingState,
   SpeakerLayout,
+  useCall,
   useCallStateHooks,
   ToggleAudioPublishingButton,
   ToggleVideoPublishingButton,
@@ -8,7 +9,7 @@ import {
   ScreenShareButton,
 } from "@stream-io/video-react-sdk";
 import { Loader2Icon, MessageSquareIcon, UsersIcon, XIcon } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router";
 import { Channel, Chat, MessageInput, MessageList, Thread, Window } from "stream-chat-react";
 import { useEndSession } from "../hooks/useSessions";
@@ -20,13 +21,15 @@ import "stream-chat-react/dist/css/v2/index.css";
 function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessionType, userName, userId, onTranscript }) {
   const navigate = useNavigate();
   const { id } = useParams();
+  const call = useCall();
   const { useCallCallingState, useParticipantCount, useMicrophoneState } = useCallStateHooks();
   const callingState = useCallCallingState();
   const participantCount = useParticipantCount();
   const { isMute } = useMicrophoneState();
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const hasExplicitlyLeftRef = useRef(false);
+  // Prevent double-navigation from competing redirect paths
+  const hasNavigatedRef = useRef(false);
 
   // Transcription - enabled when mic is on, uses main session socket via onTranscript callback
   // isActive: true when mic is on (for badge visibility)
@@ -40,18 +43,43 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
 
   const endSessionMutation = useEndSession();
 
-  // Watch for call ending
-  // Only navigate when the user has explicitly left/ended the session.
-  // Transient CallingState.LEFT events (e.g., network hiccups, chat ops) are ignored.
-  useEffect(() => {
-    if (callingState === CallingState.LEFT && hasExplicitlyLeftRef.current) {
-      if (sessionType !== "class") {
-        navigate(`/feedback/${id}`);
-      } else {
-        navigate("/dashboard");
-      }
+  // Helper: navigate to the correct page after session ends
+  const navigateAfterEnd = useCallback(() => {
+    if (hasNavigatedRef.current) return; // already navigating
+    hasNavigatedRef.current = true;
+    if (sessionType !== "class") {
+      navigate(`/feedback/${id}`);
+    } else {
+      navigate("/dashboard");
     }
-  }, [callingState, navigate, id, sessionType]);
+  }, [navigate, id, sessionType]);
+
+  // Watch for call ending via CallingState changes.
+  // This handles BOTH the host (who clicks leave) and non-host participants
+  // (whose call transitions to LEFT when the host deletes the call server-side).
+  useEffect(() => {
+    if (callingState === CallingState.LEFT) {
+      navigateAfterEnd();
+    }
+  }, [callingState, navigateAfterEnd]);
+
+  // Listen for the Stream SDK 'call.ended' event.
+  // When the host ends the session, the backend hard-deletes the call,
+  // which triggers this event on all participants immediately.
+  // This ensures non-host users get redirected right away instead of
+  // waiting for the 5-second session poll to detect status:completed.
+  useEffect(() => {
+    if (!call) return;
+
+    const handleCallEnded = () => {
+      navigateAfterEnd();
+    };
+
+    call.on("call.ended", handleCallEnded);
+    return () => {
+      call.off("call.ended", handleCallEnded);
+    };
+  }, [call, navigateAfterEnd]);
 
   // Listen for new messages to update unread count
   useEffect(() => {
@@ -83,23 +111,21 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
   };
 
   const handleLeave = () => {
-    hasExplicitlyLeftRef.current = true;
     if (isHost) {
       if (confirm("End this session for everyone?")) {
         endSessionMutation.mutate(id, {
           onSuccess: () => {
-            if (sessionType !== "class") {
-              navigate(`/feedback/${id}`);
-            } else {
-              navigate("/dashboard");
-            }
+            navigateAfterEnd();
+          },
+          onError: () => {
+            // Even if the API call fails, navigate away so the page isn't stuck
+            navigateAfterEnd();
           },
         });
-      } else {
-        hasExplicitlyLeftRef.current = false;
       }
     } else {
-      navigate("/dashboard");
+      // Non-host student leaves — go to dashboard (or feedback for 1:1)
+      navigateAfterEnd();
     }
   };
 

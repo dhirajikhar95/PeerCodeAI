@@ -86,6 +86,7 @@ function SessionPage() {
   const [code, setCode] = useState("");
   const [output, setOutput] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [sessionEnded, setSessionEnded] = useState(false);
 
   // Track if student typed locally (not from socket sync)
   const hasStudentTypedRef = useRef(false);
@@ -119,15 +120,16 @@ function SessionPage() {
   useEffect(() => {
     if (!session || loadingSession) return;
     if (session.status === "completed") {
+      setSessionEnded(true);
       // Redirect to AI Report for 1:1 sessions (both teacher and student)
       if (session.sessionType !== "class") {
         navigate(`/feedback/${id}`);
       } else {
-        // Class sessions go to dashboard
-        navigate(userRole === "teacher" ? "/teacher/dashboard" : "/student/dashboard");
+        // Class sessions go to dashboard (single /dashboard route handles both roles)
+        navigate("/dashboard");
       }
     }
-  }, [session, loadingSession, navigate, userRole, id]);
+  }, [session, loadingSession, navigate, id]);
 
   useEffect(() => {
     if (!session || userRole !== "student" || !hasStudentTypedRef.current || !studentOwnCodeRef.current) return;
@@ -207,10 +209,17 @@ function SessionPage() {
     );
   }
 
-  if (!session) {
+  if (!session || sessionEnded) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--page-gradient)' }}>
-        <p className="text-error">Session not found</p>
+        {sessionEnded ? (
+          <div className="text-center">
+            <Loader2Icon className="size-12 animate-spin text-primary mx-auto mb-4" />
+            <p className="text-lg text-base-content">Session ended, redirecting...</p>
+          </div>
+        ) : (
+          <p className="text-error">Session not found</p>
+        )}
       </div>
     );
   }

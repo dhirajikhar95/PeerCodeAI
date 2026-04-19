@@ -9,7 +9,7 @@ import {
 } from "@stream-io/video-react-sdk";
 import { Loader2Icon, MessageSquareIcon, UsersIcon, XIcon, PhoneOffIcon } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useParams } from "react-router";
 import { Channel, Chat, MessageInput, MessageList, Thread, Window } from "stream-chat-react";
 import { useEndSession } from "../hooks/useSessions";
 import { useTranscription } from "../hooks/useTranscription";
@@ -17,8 +17,7 @@ import { useTranscription } from "../hooks/useTranscription";
 import "@stream-io/video-react-sdk/dist/css/styles.css";
 import "stream-chat-react/dist/css/v2/index.css";
 
-function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessionType, userName, userId, onTranscript }) {
-  const navigate = useNavigate();
+function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessionType, userName, userId, onTranscript, onNavigateAway }) {
   const { id } = useParams();
   const call = useCall();
   const { useCallCallingState, useParticipantCount, useMicrophoneState } = useCallStateHooks();
@@ -32,8 +31,6 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
   const hasNavigatedRef = useRef(false);
 
   // Transcription - enabled when mic is on, uses main session socket via onTranscript callback
-  // isActive: true when mic is on (for badge visibility)
-  // isListening: true when recognition is actually running
   const { isActive: isTranscribing } = useTranscription({
     speakerName: userName || "Unknown",
     speakerId: userId || "",
@@ -43,21 +40,20 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
 
   const endSessionMutation = useEndSession();
 
-  // Helper: navigate to the correct page after session ends
+  // Helper: navigate to the correct page after session ends.
+  // Uses the parent's navigateAway which does graceful cleanup
+  // (unmounts Chat components first, then disconnects clients).
   const navigateAfterEnd = useCallback(() => {
-    if (hasNavigatedRef.current) return; // already navigating
+    if (hasNavigatedRef.current) return;
     hasNavigatedRef.current = true;
-    if (sessionType !== "class") {
-      navigate(`/feedback/${id}`);
-    } else {
-      navigate("/dashboard");
+    const target = sessionType !== "class" ? `/feedback/${id}` : "/dashboard";
+    if (onNavigateAway) {
+      onNavigateAway(target);
     }
-  }, [navigate, id, sessionType]);
+  }, [id, sessionType, onNavigateAway]);
 
   // Watch for call ending via CallingState changes.
   // Handle ALL terminal call states — not just LEFT.
-  // When a call is hard-deleted server-side, the state may transition to
-  // LEFT, IDLE, or RECONNECTING_FAILED depending on the SDK version and timing.
   useEffect(() => {
     if (
       callingState === CallingState.LEFT ||
@@ -69,8 +65,6 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
   }, [callingState, navigateAfterEnd]);
 
   // Listen for the Stream SDK 'call.ended' event.
-  // When the host ends the session, the backend hard-deletes the call,
-  // which triggers this event on all participants immediately.
   useEffect(() => {
     if (!call) return;
 
@@ -89,7 +83,7 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
     if (!channel) return;
 
     const handleNewMessage = (event) => {
-      if (!isChatOpen && event.user?.id !== chatClient.userID) {
+      if (!isChatOpen && event.user?.id !== chatClient?.userID) {
         setUnreadCount((prev) => prev + 1);
       }
     };
@@ -99,44 +93,36 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
     return () => {
       channel.off("message.new", handleNewMessage);
     };
-  }, [channel, isChatOpen, chatClient.userID]);
+  }, [channel, isChatOpen, chatClient?.userID]);
 
   const handleChatToggle = () => {
     const newState = !isChatOpen;
     setIsChatOpen(newState);
     if (newState) {
-      setUnreadCount(0); // Reset unread count when opening
+      setUnreadCount(0);
     }
-    // Notify parent to resize panels
     if (onChatToggle) {
       onChatToggle(newState);
     }
   };
 
-  // Custom leave handler — we fully control the flow instead of
-  // relying on CancelCallButton which may call call.leave() before
-  // our logic runs, creating race conditions in production.
+  // Custom leave handler — we fully control the flow.
   const handleLeave = async () => {
-    if (isEnding) return; // Prevent double-clicks
+    if (isEnding) return;
 
     if (isHost) {
       if (!confirm("End this session for everyone?")) return;
 
       setIsEnding(true);
-      // FIRST: End the session on the backend (this hard-deletes the call)
-      // THEN: Navigate. This order is critical — if we navigate first,
-      // the component unmounts and the mutation might not complete.
       endSessionMutation.mutate(id, {
         onSuccess: () => {
           navigateAfterEnd();
         },
         onError: () => {
-          // Even if the API call fails, navigate away so the page isn't stuck
           navigateAfterEnd();
         },
       });
     } else {
-      // Non-host student leaves — go to dashboard (or feedback for 1:1)
       navigateAfterEnd();
     }
   };
@@ -154,7 +140,6 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
 
   return (
     <div className="h-full flex gap-3 relative str-video">
-      {/* Video section - always full width */}
       <div className="flex flex-col gap-3 w-full">
         {/* Participants & Chat Toggle */}
         <div className="flex items-center justify-between gap-2 bg-base-100 p-3 rounded-lg shadow border border-base-200">
@@ -165,7 +150,6 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
                 {participantCount} {participantCount === 1 ? "participant" : "participants"}
               </span>
             </div>
-            {/* Live Transcribing Badge */}
             {isTranscribing && (
               <div className="flex items-center gap-1.5 px-2 py-1 bg-error/10 rounded-full">
                 <span className="relative flex h-2 w-2">
@@ -199,12 +183,11 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
           <SpeakerLayout />
         </div>
 
-        {/* Custom Call Controls — using our own leave button instead of CancelCallButton */}
+        {/* Custom Call Controls */}
         <div className="bg-base-100 p-3 rounded-lg shadow flex justify-center gap-4 border border-base-200">
           <ToggleAudioPublishingButton />
           <ToggleVideoPublishingButton />
           <ScreenShareButton />
-          {/* Custom leave/end button with full control over the flow */}
           <button
             onClick={handleLeave}
             disabled={isEnding}
@@ -233,7 +216,7 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
         </div>
       </div>
 
-      {/* CHAT SECTION - Smooth slide animation */}
+      {/* CHAT SECTION — only render if chatClient and channel are still valid */}
       {chatClient && channel && (
         <div
           className={`absolute top-0 right-0 h-full w-80 flex flex-col rounded-l-lg shadow-lg overflow-hidden bg-base-100 border-l border-base-300 transition-transform duration-300 ease-out ${isChatOpen ? "translate-x-0" : "translate-x-full"

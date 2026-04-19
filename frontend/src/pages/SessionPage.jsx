@@ -77,7 +77,7 @@ function SessionPage() {
     clearRemoteRunningState,
   } = useSessionSocket(id, user?.id, userRole);
 
-  const { call, channel, chatClient, isInitializingCall, streamClient } = useStreamClient(
+  const { call, channel, chatClient, isInitializingCall, streamClient, cleanupBeforeNavigate } = useStreamClient(
     session,
     loadingSession,
     isHost,
@@ -89,11 +89,51 @@ function SessionPage() {
   const [output, setOutput] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
+  const hasNavigatedRef = useRef(false);
 
   // Track if student typed locally (not from socket sync)
   const hasStudentTypedRef = useRef(false);
   // Store student's OWN code separately (not affected by teacher's remote edits)
   const studentOwnCodeRef = useRef("");
+
+  // Graceful navigation helper: cleans up Stream/Chat clients BEFORE navigating.
+  // This prevents "You can't use a channel after client.disconnect()" errors
+  // by clearing React state first (which unmounts Chat components),
+  // waiting a frame, then disconnecting the underlying clients.
+  const navigateAway = useCallback(async (target) => {
+    if (hasNavigatedRef.current) return;
+    hasNavigatedRef.current = true;
+    setSessionEnded(true);
+    await cleanupBeforeNavigate();
+    navigate(target);
+  }, [cleanupBeforeNavigate, navigate]);
+
+  // Catch-all for uncaught Stream SDK errors that bypass React error boundaries.
+  // This handles the "You can't use a channel after client.disconnect()" error
+  // that can be thrown from effects/event handlers (not caught by error boundaries).
+  useEffect(() => {
+    const handleError = (event) => {
+      const msg = event.error?.message || event.message || "";
+      if (
+        msg.includes("client.disconnect()") ||
+        msg.includes("Cannot leave call") ||
+        msg.includes("call that has already been")
+      ) {
+        event.preventDefault(); // Prevent the error from showing in console
+        console.warn("[SessionPage] Suppressed Stream SDK cleanup error");
+        // Force redirect if we haven't navigated yet
+        if (!hasNavigatedRef.current) {
+          hasNavigatedRef.current = true;
+          const target = session?.sessionType !== "class"
+            ? `/feedback/${id}`
+            : "/dashboard";
+          window.location.href = target;
+        }
+      }
+    };
+    window.addEventListener("error", handleError);
+    return () => window.removeEventListener("error", handleError);
+  }, [id, session?.sessionType]);
 
   useEffect(() => {
     if (question?.starterCode?.[selectedLanguage]) {
@@ -119,19 +159,16 @@ function SessionPage() {
     joinSessionMutation.mutate(id, { onSuccess: refetch });
   }, [session, user, loadingSession, isHost, isParticipant, id]);
 
+  // Detect session completed via polling (5s interval from useSessionById)
   useEffect(() => {
     if (!session || loadingSession) return;
     if (session.status === "completed") {
-      setSessionEnded(true);
-      // Redirect to AI Report for 1:1 sessions (both teacher and student)
-      if (session.sessionType !== "class") {
-        navigate(`/feedback/${id}`);
-      } else {
-        // Class sessions go to dashboard (single /dashboard route handles both roles)
-        navigate("/dashboard");
-      }
+      const target = session.sessionType !== "class"
+        ? `/feedback/${id}`
+        : "/dashboard";
+      navigateAway(target);
     }
-  }, [session, loadingSession, navigate, id]);
+  }, [session, loadingSession, navigateAway, id]);
 
   // Socket-based session end detection — the most reliable redirect mechanism.
   // When the host ends the session, the backend emits 'session:ended' via Socket.IO
@@ -139,13 +176,11 @@ function SessionPage() {
   useEffect(() => {
     if (!sessionEndedData) return;
     console.log("[SessionPage] Socket session:ended received, redirecting...");
-    setSessionEnded(true);
-    if (sessionEndedData.sessionType !== "class") {
-      navigate(`/feedback/${id}`);
-    } else {
-      navigate("/dashboard");
-    }
-  }, [sessionEndedData, navigate, id]);
+    const target = sessionEndedData.sessionType !== "class"
+      ? `/feedback/${id}`
+      : "/dashboard";
+    navigateAway(target);
+  }, [sessionEndedData, navigateAway, id]);
 
   useEffect(() => {
     if (!session || userRole !== "student" || !hasStudentTypedRef.current || !studentOwnCodeRef.current) return;
@@ -418,6 +453,7 @@ function SessionPage() {
                         userName={user?.fullName || user?.firstName || "User"}
                         userId={user?.id}
                         onTranscript={emitTranscript}
+                        onNavigateAway={navigateAway}
                       />
                     </StreamCall>
                   </StreamVideo>

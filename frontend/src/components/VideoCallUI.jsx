@@ -5,10 +5,9 @@ import {
   useCallStateHooks,
   ToggleAudioPublishingButton,
   ToggleVideoPublishingButton,
-  CancelCallButton,
   ScreenShareButton,
 } from "@stream-io/video-react-sdk";
-import { Loader2Icon, MessageSquareIcon, UsersIcon, XIcon } from "lucide-react";
+import { Loader2Icon, MessageSquareIcon, UsersIcon, XIcon, PhoneOffIcon } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router";
 import { Channel, Chat, MessageInput, MessageList, Thread, Window } from "stream-chat-react";
@@ -28,6 +27,7 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
   const { isMute } = useMicrophoneState();
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isEnding, setIsEnding] = useState(false);
   // Prevent double-navigation from competing redirect paths
   const hasNavigatedRef = useRef(false);
 
@@ -55,10 +55,15 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
   }, [navigate, id, sessionType]);
 
   // Watch for call ending via CallingState changes.
-  // This handles BOTH the host (who clicks leave) and non-host participants
-  // (whose call transitions to LEFT when the host deletes the call server-side).
+  // Handle ALL terminal call states — not just LEFT.
+  // When a call is hard-deleted server-side, the state may transition to
+  // LEFT, IDLE, or RECONNECTING_FAILED depending on the SDK version and timing.
   useEffect(() => {
-    if (callingState === CallingState.LEFT) {
+    if (
+      callingState === CallingState.LEFT ||
+      callingState === CallingState.RECONNECTING_FAILED ||
+      callingState === CallingState.OFFLINE
+    ) {
       navigateAfterEnd();
     }
   }, [callingState, navigateAfterEnd]);
@@ -66,8 +71,6 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
   // Listen for the Stream SDK 'call.ended' event.
   // When the host ends the session, the backend hard-deletes the call,
   // which triggers this event on all participants immediately.
-  // This ensures non-host users get redirected right away instead of
-  // waiting for the 5-second session poll to detect status:completed.
   useEffect(() => {
     if (!call) return;
 
@@ -110,19 +113,28 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
     }
   };
 
-  const handleLeave = () => {
+  // Custom leave handler — we fully control the flow instead of
+  // relying on CancelCallButton which may call call.leave() before
+  // our logic runs, creating race conditions in production.
+  const handleLeave = async () => {
+    if (isEnding) return; // Prevent double-clicks
+
     if (isHost) {
-      if (confirm("End this session for everyone?")) {
-        endSessionMutation.mutate(id, {
-          onSuccess: () => {
-            navigateAfterEnd();
-          },
-          onError: () => {
-            // Even if the API call fails, navigate away so the page isn't stuck
-            navigateAfterEnd();
-          },
-        });
-      }
+      if (!confirm("End this session for everyone?")) return;
+
+      setIsEnding(true);
+      // FIRST: End the session on the backend (this hard-deletes the call)
+      // THEN: Navigate. This order is critical — if we navigate first,
+      // the component unmounts and the mutation might not complete.
+      endSessionMutation.mutate(id, {
+        onSuccess: () => {
+          navigateAfterEnd();
+        },
+        onError: () => {
+          // Even if the API call fails, navigate away so the page isn't stuck
+          navigateAfterEnd();
+        },
+      });
     } else {
       // Non-host student leaves — go to dashboard (or feedback for 1:1)
       navigateAfterEnd();
@@ -187,12 +199,37 @@ function VideoCallUI({ chatClient, channel, isHost = false, onChatToggle, sessio
           <SpeakerLayout />
         </div>
 
-        {/* Custom Call Controls (No Reactions) */}
+        {/* Custom Call Controls — using our own leave button instead of CancelCallButton */}
         <div className="bg-base-100 p-3 rounded-lg shadow flex justify-center gap-4 border border-base-200">
           <ToggleAudioPublishingButton />
           <ToggleVideoPublishingButton />
           <ScreenShareButton />
-          <CancelCallButton onLeave={handleLeave} />
+          {/* Custom leave/end button with full control over the flow */}
+          <button
+            onClick={handleLeave}
+            disabled={isEnding}
+            className="str-video__composite-button str-video__end-call-button"
+            title={isHost ? "End session for everyone" : "Leave session"}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '52px',
+              height: '52px',
+              borderRadius: '50%',
+              backgroundColor: isEnding ? '#666' : '#dc2626',
+              border: 'none',
+              cursor: isEnding ? 'not-allowed' : 'pointer',
+              color: 'white',
+              transition: 'background-color 0.2s',
+            }}
+          >
+            {isEnding ? (
+              <Loader2Icon className="size-5 animate-spin" />
+            ) : (
+              <PhoneOffIcon className="size-5" />
+            )}
+          </button>
         </div>
       </div>
 

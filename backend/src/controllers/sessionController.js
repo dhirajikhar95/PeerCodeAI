@@ -385,6 +385,23 @@ export async function endSession(req, res) {
     session.status = "completed";
     await session.save();
 
+    // Notify all participants via Socket.IO that session has ended.
+    // This is the most reliable redirect mechanism — it uses the existing
+    // socket connection and doesn't depend on Stream SDK WebSocket events.
+    try {
+      const { getIO } = await import("../lib/socket.js");
+      const io = getIO();
+      if (io) {
+        io.to(id).emit("session:ended", {
+          sessionId: id,
+          sessionType: session.sessionType,
+        });
+        console.log(`[EndSession] Emitted session:ended to room ${id}`);
+      }
+    } catch (e) {
+      console.log("Warning: Could not emit session:ended via socket:", e.message);
+    }
+
     // Get full session data for emails
     const populatedSession = await Session.findById(id)
       .populate("host", "name email")

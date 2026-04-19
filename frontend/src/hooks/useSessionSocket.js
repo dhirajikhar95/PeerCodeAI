@@ -11,6 +11,7 @@ export function useSessionSocket(sessionId, userId, role) {
     const [remoteOutput, setRemoteOutput] = useState(null);
     const [remoteTestResults, setRemoteTestResults] = useState(null);
     const [remoteRunningState, setRemoteRunningState] = useState(null);
+    const [sessionEndedData, setSessionEndedData] = useState(null);
 
     useEffect(() => {
         if (!sessionId || !userId) return;
@@ -71,6 +72,15 @@ export function useSessionSocket(sessionId, userId, role) {
             if (senderId !== userId) {
                 setRemoteRunningState(isRunning);
             }
+        });
+
+        // Listen for session:ended event from backend.
+        // This is the most reliable redirect trigger — emitted via Socket.IO
+        // immediately after the session is marked completed on the server.
+        // Independent of Stream SDK WebSocket events.
+        socket.on("session:ended", (data) => {
+            console.log("[Socket] Received session:ended", data);
+            setSessionEndedData(data);
         });
 
         // Cleanup on unmount
@@ -145,6 +155,7 @@ export function useSessionSocket(sessionId, userId, role) {
         remoteOutput,
         remoteTestResults,
         remoteRunningState,
+        sessionEndedData,
         emitCodeUpdate,
         emitLanguageChange,
         emitOutputUpdate,

@@ -154,8 +154,8 @@ const FeedbackPage = () => {
         if (window.history.length > 2) {
             navigate(-1);
         } else {
-            // Fallback to appropriate dashboard
-            navigate(role === "teacher" ? "/teacher/dashboard" : "/student/dashboard");
+            // Fallback to dashboard (single route handles both teacher/student)
+            navigate("/dashboard");
         }
     };
 

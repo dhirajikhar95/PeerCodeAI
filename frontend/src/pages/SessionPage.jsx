@@ -22,6 +22,7 @@ import useStreamClient from "../hooks/useStreamClient";
 import { StreamCall, StreamVideo } from "@stream-io/video-react-sdk";
 import VideoCallUI from "../components/VideoCallUI";
 import TestCasePanel from "../components/TestCasePanel";
+import SessionErrorBoundary from "../components/SessionErrorBoundary";
 import axiosInstance from "../lib/axios";
 
 // Language config with logos (matching public folder files)
@@ -62,6 +63,7 @@ function SessionPage() {
     remoteOutput,
     remoteTestResults,
     remoteRunningState,
+    sessionEndedData,
     emitCodeUpdate,
     emitLanguageChange,
     emitOutputUpdate,
@@ -130,6 +132,20 @@ function SessionPage() {
       }
     }
   }, [session, loadingSession, navigate, id]);
+
+  // Socket-based session end detection — the most reliable redirect mechanism.
+  // When the host ends the session, the backend emits 'session:ended' via Socket.IO
+  // to all participants in the room. This fires immediately, unlike the 5s polling.
+  useEffect(() => {
+    if (!sessionEndedData) return;
+    console.log("[SessionPage] Socket session:ended received, redirecting...");
+    setSessionEnded(true);
+    if (sessionEndedData.sessionType !== "class") {
+      navigate(`/feedback/${id}`);
+    } else {
+      navigate("/dashboard");
+    }
+  }, [sessionEndedData, navigate, id]);
 
   useEffect(() => {
     if (!session || userRole !== "student" || !hasStudentTypedRef.current || !studentOwnCodeRef.current) return;
@@ -390,20 +406,22 @@ function SessionPage() {
           <Panel defaultSize={isChatOpen ? 50 : 45} minSize={35}>
             <div className="h-full rounded-lg overflow-hidden">
               {streamClient && call ? (
-                <StreamVideo client={streamClient}>
-                  <StreamCall call={call}>
-                    <VideoCallUI
-                      chatClient={chatClient}
-                      channel={channel}
-                      isHost={isHost}
-                      onChatToggle={handleChatToggle}
-                      sessionType={session.sessionType}
-                      userName={user?.fullName || user?.firstName || "User"}
-                      userId={user?.id}
-                      onTranscript={emitTranscript}
-                    />
-                  </StreamCall>
-                </StreamVideo>
+                <SessionErrorBoundary sessionType={session.sessionType} sessionId={id}>
+                  <StreamVideo client={streamClient}>
+                    <StreamCall call={call}>
+                      <VideoCallUI
+                        chatClient={chatClient}
+                        channel={channel}
+                        isHost={isHost}
+                        onChatToggle={handleChatToggle}
+                        sessionType={session.sessionType}
+                        userName={user?.fullName || user?.firstName || "User"}
+                        userId={user?.id}
+                        onTranscript={emitTranscript}
+                      />
+                    </StreamCall>
+                  </StreamVideo>
+                </SessionErrorBoundary>
               ) : (
                 <div className="h-full flex items-center justify-center bg-base-100 rounded-lg">
                   <Loader2Icon className="size-8 animate-spin text-primary" />
